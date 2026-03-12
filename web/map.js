@@ -379,9 +379,14 @@ initialiseMapsAndLayers().catch((err) => {
 // 5) Drawing tools (POIs, blocked areas, survey lines)
 // -----------------------------
 
+// This group is only used so the Leaflet Draw "edit" toolbar
+// has a concrete featureGroup to work with.
+const drawnEditGroup = new L.FeatureGroup();
+map.addLayer(drawnEditGroup);
+
 const drawControl = new L.Control.Draw({
   edit: {
-    featureGroup: L.layerGroup(),
+    featureGroup: drawnEditGroup,
   },
   draw: {
     marker: true,
@@ -415,6 +420,9 @@ map.on(L.Draw.Event.CREATED, (evt) => {
   } else if (type === "polyline") {
     base.surveyLayer.addLayer(layer);
   }
+
+   // Also add to the global edit group so the edit toolbar can modify it.
+  drawnEditGroup.addLayer(layer);
 
   syncOverlayGroupsForBase(base);
 });
