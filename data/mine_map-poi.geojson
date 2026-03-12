@@ -4,7 +4,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Cavern A",
+        "name": "Point of interest A",
         "note": "Large chamber"
       },
       "geometry": {
@@ -15,7 +15,7 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Cavern B",
+        "name": "Point of interest B",
         "note": "Air bell / pocket"
       },
       "geometry": {

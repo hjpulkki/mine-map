@@ -4,7 +4,8 @@
     {
       "type": "Feature",
       "properties": {
-        "name": "Collapse zone"
+        "name": "Blocked area",
+        "reason": "Collapse zone / rubble"
       },
       "geometry": {
         "type": "Polygon",

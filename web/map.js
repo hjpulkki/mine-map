@@ -2,82 +2,68 @@
 /*
   Mine map demo (Leaflet + image overlay + GeoJSON).
 
-  Key idea:
-  - We are NOT using real-world coordinates.
-  - We treat the map like a simple 2D drawing surface with coordinates in the
-    range 0..1000 (you can pick any range you want).
-  - Leaflet supports this via L.CRS.Simple.
+  Updates in this version:
+  - Multiple base images (maps) supported.
+  - Each map keeps its original aspect ratio (we use the real image size).
+  - All GeoJSON files are linked to a specific base image by filename.
+  - Drawing tools for:
+      * points of interest (markers)
+      * blocked areas (polygons)
+      * optional survey lines (polylines)
 
-  Coordinate conventions (important!):
-  - GeoJSON stores positions as [x, y] (conceptually [east, north] or [col, row]).
-  - Leaflet uses LatLng order internally: [lat, lng].
-  - With L.CRS.Simple, Leaflet interprets:
-      lng = x (horizontal)
-      lat = y (vertical)
-    So our GeoJSON [x, y] maps nicely to Leaflet as [lng, lat] under the hood.
+  Coordinate model:
+  - We still use L.CRS.Simple (a flat 2D grid, not real-world lat/lng).
+  - For each image we treat coordinates as:
+      x = horizontal pixel
+      y = vertical pixel
+    i.e. bounds = [[0, 0], [imageHeight, imageWidth]]
+  - This keeps the image undistorted and aligns features with actual pixels.
+
+  File naming convention (important for linking features to maps):
+  - Base images live in /base as JPGs.
+    Example existing map:
+      base/mine_map.jpg
+
+  - For each base image "ID" (filename without extension), we *optionally* load:
+      data/<ID>-poi.geojson      -> green "Points of interest"
+      data/<ID>-blocked.geojson  -> red "Blocked areas"
+      data/<ID>-survey.geojson   -> blue "Survey lines" (optional)
+
+    So for mine_map.jpg we look for:
+      base/mine_map.jpg
+      data/mine_map-poi.geojson
+      data/mine_map-blocked.geojson
+      data/mine_map-survey.geojson
+
+  Adding a new map layer:
+  - Drop a new JPG into /base using ONE of these patterns:
+      mine_map.jpg   (existing default)
+      map-2.jpg
+      map-3.jpg
+      ...
+  - (No code changes required.)
+
+  Adding new features for a map:
+  - Create a new GeoJSON file that follows the naming pattern above.
+  - The viewer will try to load it automatically.
 */
 
 // -----------------------------
-// 1) Define the image coordinate system
-// -----------------------------
-
-// Our "map coordinates" are 0..1000 in both X and Y.
-// - X grows to the right
-// - Y grows downward (in L.CRS.Simple, the origin is top-left by convention)
-const IMAGE_SIZE = 1000;
-
-// Leaflet bounds are [[southWestLat, southWestLng], [northEastLat, northEastLng]]
-// but with Simple CRS "lat" is just Y and "lng" is just X.
-//
-// Here:
-// - top-left is [0, 0]
-// - bottom-right is [1000, 1000]
-const imageBounds = [
-  [0, 0],
-  [IMAGE_SIZE, IMAGE_SIZE],
-];
-
-// -----------------------------
-// 2) Create the Leaflet map
+// 1) Create the Leaflet map (no bounds yet)
 // -----------------------------
 
 const map = L.map("map", {
   crs: L.CRS.Simple,
-
-  // These keep navigation sane for image maps.
-  minZoom: -2,
+  minZoom: -4,
   maxZoom: 4,
-
-  // Prevent panning infinitely away from the image.
-  maxBounds: imageBounds,
-  maxBoundsViscosity: 1.0,
-
-  // We only use the image overlay; no tile layer.
   zoomControl: true,
 });
 
-// Fit the view to the image bounds on first load.
-map.fitBounds(imageBounds);
+// We will set maxBounds / fitBounds after we know image sizes.
+let globalBounds = null;
 
 // -----------------------------
-// 3) Add the JPG as an image overlay
-// -----------------------------
-
-// IMPORTANT:
-// - Put your real JPG at: mine-map-demo/base/mine_map.jpg
-// - This demo references it from /web/ as ../base/mine_map.jpg
-const imageUrl = "../base/mine_map.jpg";
-
-const baseImage = L.imageOverlay(imageUrl, imageBounds, {
-  // If the image is large, this helps performance when panning/zooming.
-  // (Leaflet uses CSS transforms; "pixelated" is optional and depends on your art.)
-  opacity: 1,
-});
-
-baseImage.addTo(map);
-
-// -----------------------------
-// 4) Helpers for loading GeoJSON
+// 2) Helpers for loading GeoJSON
 // -----------------------------
 
 async function fetchGeoJson(url) {
@@ -88,18 +74,12 @@ async function fetchGeoJson(url) {
   return await res.json();
 }
 
-// Small helper to build consistent layer names in the control.
-function addToLayerControl(control, layer, name) {
-  control.addOverlay(layer, name);
-  return layer;
-}
-
 // -----------------------------
-// 5) Define styles for each feature type
+// 3) Styles for each feature type
 // -----------------------------
 
-// cave_lines = blue lines
-function caveLineStyle() {
+// survey lines = blue lines
+function surveyLineStyle() {
   return {
     color: "#2563eb", // blue-600
     weight: 3,
@@ -107,8 +87,8 @@ function caveLineStyle() {
   };
 }
 
-// rubble = red polygons
-function rubbleStyle() {
+// blocked areas = red polygons / lines
+function blockedAreaStyle() {
   return {
     color: "#b91c1c", // red-700
     weight: 2,
@@ -118,9 +98,8 @@ function rubbleStyle() {
   };
 }
 
-// caverns = green circles
-function cavernPointToLayer(feature, latlng) {
-  // latlng is in our simple coordinate system.
+// points of interest = green circles
+function poiPointToLayer(feature, latlng) {
   return L.circleMarker(latlng, {
     radius: 7,
     color: "#166534", // green-800
@@ -131,18 +110,15 @@ function cavernPointToLayer(feature, latlng) {
 }
 
 function bindFeaturePopup(feature, layer) {
-  // Optional: show properties on click.
-  // If you don't want popups, you can remove this.
   const props = feature && feature.properties ? feature.properties : {};
-  const lines = Object.entries(props).map(
-    ([k, v]) => `<div><strong>${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`,
+  const entries = Object.entries(props);
+  if (entries.length === 0) return;
+  const lines = entries.map(
+    ([k, v]) => `<div><strong>${escapeHtml(String(k))}:</strong> ${escapeHtml(String(v))}</div>`,
   );
-  if (lines.length > 0) {
-    layer.bindPopup(`<div class="popup-props">${lines.join("")}</div>`);
-  }
+  layer.bindPopup(`<div class="popup-props">${lines.join("")}</div>`);
 }
 
-// Basic HTML escaping for popup content.
 function escapeHtml(s) {
   return s
     .replaceAll("&", "&amp;")
@@ -153,153 +129,327 @@ function escapeHtml(s) {
 }
 
 // -----------------------------
-// 6) Load and add the GeoJSON layers
+// 4) Base image and per-map layer management
 // -----------------------------
 
-// Layer control (toggle checkboxes). We’ll add overlays after they load.
-const layerControl = L.control.layers(
-  // base layers (none; our image is not a "base layer" in Leaflet's sense here)
-  undefined,
-  // overlays (added later)
-  undefined,
-  { collapsed: false },
-);
-layerControl.addTo(map);
+// We support one "special" default map ID plus a range map-2..map-9.
+// To add a new layer, just drop e.g. base/map-2.jpg into the base folder.
+const BASE_IMAGE_IDS = [
+  "mine_map",
+  "map-2",
+  "map-3",
+  "map-4",
+  "map-5",
+  "map-6",
+  "map-7",
+  "map-8",
+  "map-9",
+];
 
-// We keep references so we can export / manipulate later.
-let caveLinesLayer;
-let rubbleLayer;
-let cavernsLayer;
-let userSurveyLayer; // e.g. your yk58-osa.geojson
+/**
+ * Model for each base image:
+ * - id:            string (e.g. "mine_map", "map-2")
+ * - title:         human-friendly label for the UI
+ * - url:           "../base/<id>.jpg"
+ * - width/height:  image pixel size
+ * - bounds:        [[0,0],[height,width]]
+ * - imageOverlay:  L.ImageOverlay
+ * - poiLayer:          L.LayerGroup (static points of interest for this map)
+ * - blockedLayer:      L.LayerGroup (static blocked areas for this map)
+ * - surveyLayer:       L.LayerGroup (static survey lines for this map)
+ * - drawnPoiLayer:     L.LayerGroup (user-drawn POIs for this map)
+ * - drawnBlockedLayer: L.LayerGroup (user-drawn blocked areas for this map)
+ */
+const baseMaps = new Map();
+let currentBaseId = null;
+
+// Global overlay groups (one per category). Each will contain only the
+// sub-layer(s) for the currently active base map.
+const overlayLayers = {
+  poi: L.layerGroup(),
+  blocked: L.layerGroup(),
+  survey: L.layerGroup(),
+  drawnPoi: L.layerGroup(),
+  drawnBlocked: L.layerGroup(),
+};
+
+let layerControl = null;
+
+function makeBaseTitle(id) {
+  if (id === "mine_map") return "Mine map";
+  const match = id.match(/^map-(\d+)$/);
+  if (match) return `Map ${match[1]}`;
+  return id.replace(/_/g, " ");
+}
+
+function createEmptyLayers() {
+  return {
+    poiLayer: L.layerGroup(),
+    blockedLayer: L.layerGroup(),
+    surveyLayer: L.layerGroup(),
+    drawnPoiLayer: L.layerGroup(),
+    drawnBlockedLayer: L.layerGroup(),
+  };
+}
+
+function loadBaseImage(id) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (!width || !height) {
+        reject(new Error(`Image ${id} has invalid dimensions.`));
+        return;
+      }
+
+      const bounds = [
+        [0, 0],
+        [height, width],
+      ];
+
+      const url = `../base/${id}.jpg`;
+      const imageOverlay = L.imageOverlay(url, bounds, {
+        opacity: 1,
+      });
+
+      const layers = createEmptyLayers();
+
+      const base = {
+        id,
+        title: makeBaseTitle(id),
+        url,
+        width,
+        height,
+        bounds,
+        imageOverlay,
+        ...layers,
+      };
+
+      baseMaps.set(id, base);
+      resolve(base);
+    };
+    img.onerror = () => {
+      reject(new Error(`Image ../base/${id}.jpg not found or failed to load.`));
+    };
+    img.src = `../base/${id}.jpg`;
+  });
+}
+
+async function discoverBaseMaps() {
+  const results = await Promise.all(
+    BASE_IMAGE_IDS.map((id) => loadBaseImage(id).catch(() => null)),
+  );
+  const found = results.filter((b) => b !== null);
+  if (found.length === 0) {
+    throw new Error("No base images found in /base. Expected at least mine_map.jpg.");
+  }
+  return found;
+}
+
+function syncOverlayGroupsForBase(base) {
+  overlayLayers.poi.clearLayers();
+  overlayLayers.blocked.clearLayers();
+  overlayLayers.survey.clearLayers();
+  overlayLayers.drawnPoi.clearLayers();
+  overlayLayers.drawnBlocked.clearLayers();
+
+  overlayLayers.poi.addLayer(base.poiLayer);
+  overlayLayers.blocked.addLayer(base.blockedLayer);
+  overlayLayers.survey.addLayer(base.surveyLayer);
+  overlayLayers.drawnPoi.addLayer(base.drawnPoiLayer);
+  overlayLayers.drawnBlocked.addLayer(base.drawnBlockedLayer);
+}
 
 async function loadOptionalLayer(url, buildLayer, register) {
   try {
     const data = await fetchGeoJson(url);
     const layer = buildLayer(data);
     register(layer);
-    layer.addTo(map);
   } catch (err) {
-    // If a file is missing or blocked (e.g. when opened via file://),
-    // we just log a warning instead of breaking the whole app.
-    console.warn(`Skipping optional layer from ${url}`, err);
+    console.warn(`Skipping optional GeoJSON layer from ${url}`, err);
   }
 }
 
-async function loadAllLayers() {
-  // NOTE:
-  // - These loads are *optional*. Missing files only produce console warnings.
-  // - They will only work when the app is served over HTTP(S),
-  //   not from a file:// URL.
+async function loadStaticGeoJsonForBase(base) {
+  const id = base.id;
+  const prefix = `../data/${id}`;
 
   await Promise.all([
-    // Example cave_lines.geojson (blue polylines).
+    // Points of interest (green circles)
     loadOptionalLayer(
-      "../data/cave_lines.geojson",
+      `${prefix}-poi.geojson`,
       (geojson) =>
         L.geoJSON(geojson, {
-          style: caveLineStyle,
+          pointToLayer: poiPointToLayer,
           onEachFeature: bindFeaturePopup,
         }),
       (layer) => {
-        caveLinesLayer = layer;
-        addToLayerControl(layerControl, layer, "Cave lines (blue, example)");
+        base.poiLayer.addLayer(layer);
       },
     ),
 
-    // Example rubble.geojson (red polygons).
+    // Blocked areas (red polygons or lines)
     loadOptionalLayer(
-      "../data/rubble.geojson",
+      `${prefix}-blocked.geojson`,
       (geojson) =>
         L.geoJSON(geojson, {
-          style: rubbleStyle,
+          style: blockedAreaStyle,
           onEachFeature: bindFeaturePopup,
         }),
       (layer) => {
-        rubbleLayer = layer;
-        addToLayerControl(layerControl, layer, "Rubble (red, example)");
+        base.blockedLayer.addLayer(layer);
       },
     ),
 
-    // Example caverns.geojson (green points).
+    // Survey lines (blue)
     loadOptionalLayer(
-      "../data/caverns.geojson",
+      `${prefix}-survey.geojson`,
       (geojson) =>
         L.geoJSON(geojson, {
-          pointToLayer: cavernPointToLayer,
+          style: surveyLineStyle,
           onEachFeature: bindFeaturePopup,
         }),
       (layer) => {
-        cavernsLayer = layer;
-        addToLayerControl(layerControl, layer, "Caverns (green, example)");
-      },
-    ),
-
-    // Your saved survey from Leaflet Draw (e.g. yk58-osa.geojson).
-    loadOptionalLayer(
-      "../data/yk58-osa.geojson",
-      (geojson) =>
-        L.geoJSON(geojson, {
-          style: caveLineStyle,
-          onEachFeature: bindFeaturePopup,
-        }),
-      (layer) => {
-        userSurveyLayer = layer;
-        addToLayerControl(layerControl, layer, "Cave survey (yk58-osa)");
+        base.surveyLayer.addLayer(layer);
       },
     ),
   ]);
 }
 
-// This will silently skip any missing layers when run via file://.
-loadAllLayers();
+async function initialiseMapsAndLayers() {
+  const found = await discoverBaseMaps();
+
+  await Promise.all(found.map((base) => loadStaticGeoJsonForBase(base)));
+
+  const baseLayers = {};
+  found.forEach((base) => {
+    baseLayers[base.title] = base.imageOverlay;
+  });
+
+  const overlayDefs = {
+    "Points of interest": overlayLayers.poi,
+    "Blocked areas": overlayLayers.blocked,
+    "Survey lines": overlayLayers.survey,
+    "Drawn POIs": overlayLayers.drawnPoi,
+    "Drawn blocked areas": overlayLayers.drawnBlocked,
+  };
+
+  layerControl = L.control.layers(baseLayers, overlayDefs, {
+    collapsed: false,
+  });
+  layerControl.addTo(map);
+
+  const firstBase = found[0];
+  currentBaseId = firstBase.id;
+  globalBounds = firstBase.bounds;
+  firstBase.imageOverlay.addTo(map);
+  map.fitBounds(globalBounds);
+  map.setMaxBounds(globalBounds);
+
+  syncOverlayGroupsForBase(firstBase);
+  overlayLayers.poi.addTo(map);
+  overlayLayers.blocked.addTo(map);
+  overlayLayers.survey.addTo(map);
+  overlayLayers.drawnPoi.addTo(map);
+  overlayLayers.drawnBlocked.addTo(map);
+
+  map.on("baselayerchange", (evt) => {
+    const base = Array.from(baseMaps.values()).find(
+      (b) => b.imageOverlay === evt.layer,
+    );
+    if (!base) return;
+    currentBaseId = base.id;
+    globalBounds = base.bounds;
+    map.fitBounds(globalBounds);
+    map.setMaxBounds(globalBounds);
+    syncOverlayGroupsForBase(base);
+  });
+}
+
+initialiseMapsAndLayers().catch((err) => {
+  console.error(err);
+  alert(
+    "Failed to load base images or GeoJSON. Open DevTools Console for details.\n\n" +
+      "Check that at least base/mine_map.jpg exists.",
+  );
+});
 
 // -----------------------------
-// 7) Nice-to-have: Leaflet Draw (draw new cave lines) + export to GeoJSON
+// 5) Drawing tools (POIs, blocked areas, survey lines)
 // -----------------------------
-
-// This layer stores anything the user draws (so we can export it later).
-const drawnItems = new L.FeatureGroup();
-map.addLayer(drawnItems);
-addToLayerControl(layerControl, drawnItems, "Drawn features");
 
 const drawControl = new L.Control.Draw({
   edit: {
-    featureGroup: drawnItems,
+    featureGroup: L.layerGroup(),
   },
   draw: {
-    // For this cave-map demo we focus on polylines (cave lines).
-    polyline: {
-      shapeOptions: caveLineStyle(),
+    marker: true,
+    polygon: {
+      shapeOptions: blockedAreaStyle(),
     },
-
-    // Disable other tools to keep UI minimal.
-    polygon: false,
+    polyline: {
+      shapeOptions: surveyLineStyle(),
+    },
     rectangle: false,
     circle: false,
     circlemarker: false,
-    marker: false,
   },
 });
 map.addControl(drawControl);
 
 map.on(L.Draw.Event.CREATED, (evt) => {
   const layer = evt.layer;
-  drawnItems.addLayer(layer);
+  const type = evt.layerType;
+
+  const base = currentBaseId ? baseMaps.get(currentBaseId) : null;
+  if (!base) {
+    console.warn("Drawn feature ignored: no active base map.");
+    return;
+  }
+
+  if (type === "marker") {
+    base.drawnPoiLayer.addLayer(layer);
+  } else if (type === "polygon") {
+    base.drawnBlockedLayer.addLayer(layer);
+  } else if (type === "polyline") {
+    base.surveyLayer.addLayer(layer);
+  }
+
+  syncOverlayGroupsForBase(base);
 });
 
-// Export button: downloads a .geojson file of what the user drew.
-document.getElementById("exportGeoJsonBtn").addEventListener("click", () => {
-  const fc = drawnItems.toGeoJSON();
+// -----------------------------
+// 6) Export drawn features to GeoJSON (linked to maps)
+// -----------------------------
 
-  // Add a tiny hint that these are "cave lines" (optional).
-  // Leaflet Draw emits features with empty properties by default.
-  for (const f of fc.features || []) {
-    f.properties = {
-      ...(f.properties || {}),
-      source: "leaflet-draw",
-      type: f.geometry?.type,
+document.getElementById("exportGeoJsonBtn").addEventListener("click", () => {
+  const features = [];
+
+  baseMaps.forEach((base) => {
+    const pushFeatures = (sourceLayer, category) => {
+      const coll = sourceLayer.toGeoJSON();
+      if (!coll || !coll.features) return;
+      coll.features.forEach((f) => {
+        features.push({
+          ...f,
+          properties: {
+            ...(f.properties || {}),
+            mapId: base.id,
+            category,
+          },
+        });
+      });
     };
-  }
+
+    pushFeatures(base.drawnPoiLayer, "poi");
+    pushFeatures(base.drawnBlockedLayer, "blocked");
+  });
+
+  const fc = {
+    type: "FeatureCollection",
+    features,
+  };
 
   downloadJson(fc, "drawn_features.geojson");
 });
