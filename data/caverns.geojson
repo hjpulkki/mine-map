@@ -1,0 +1,27 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Cavern A",
+        "note": "Large chamber"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [340, 260]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Cavern B",
+        "note": "Air bell / pocket"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [650, 420]
+      }
+    }
+  ]
+}

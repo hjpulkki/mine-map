@@ -1,0 +1,24 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Collapse zone"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [560, 360],
+            [720, 390],
+            [760, 510],
+            [640, 560],
+            [540, 470],
+            [560, 360]
+          ]
+        ]
+      }
+    }
+  ]
+}

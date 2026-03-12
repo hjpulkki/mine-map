@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Main drift"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [120, 180],
+          [220, 210],
+          [340, 260],
+          [480, 310],
+          [650, 420],
+          [820, 540]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Side passage"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [480, 310],
+          [440, 420],
+          [430, 520],
+          [470, 650]
+        ]
+      }
+    }
+  ]
+}
