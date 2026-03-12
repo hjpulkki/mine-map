@@ -1,0 +1,41 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "source": "leaflet-draw",
+        "type": "LineString"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            714.5,
+            730.75
+          ],
+          [
+            710,
+            716.375
+          ],
+          [
+            712.5,
+            708.5
+          ],
+          [
+            737,
+            677
+          ],
+          [
+            765.125,
+            664.25
+          ],
+          [
+            773.375,
+            684.625
+          ]
+        ]
+      }
+    }
+  ]
+}
