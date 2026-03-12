@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "mapId": "mine_map",
+        "category": "blocked"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              152,
+              5512
+            ],
+            [
+              344,
+              104
+            ],
+            [
+              10344,
+              184
+            ],
+            [
+              10312,
+              5440
+            ],
+            [
+              152,
+              5512
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
