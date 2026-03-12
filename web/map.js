@@ -462,7 +462,23 @@ map.on(L.Draw.Event.CREATED, (evt) => {
 // -----------------------------
 
 document.getElementById("exportGeoJsonBtn").addEventListener("click", () => {
-  const fc = drawnItems.toGeoJSON();
+  const features = [];
+
+  // Collect all drawn features from every base map. Each feature already
+  // carries its mapId/category in feature.properties.
+  drawnByBase.forEach((group) => {
+    const coll = group.toGeoJSON();
+    if (!coll || !coll.features) return;
+    coll.features.forEach((f) => {
+      features.push(f);
+    });
+  });
+
+  const fc = {
+    type: "FeatureCollection",
+    features,
+  };
+
   downloadJson(fc, "drawn_features.geojson");
 });
 
