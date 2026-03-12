@@ -308,9 +308,9 @@ async function loadStaticGeoJsonForBase(base) {
 // 6) Initialise images, overlays, and layer control
 // -----------------------------
 
-// All drawn features from the editor (for all maps) go here.
-const drawnItems = new L.FeatureGroup();
-map.addLayer(drawnItems);
+// All drawn features are stored per base map so we can
+// show only the drawings that belong to the active image.
+const drawnByBase = new Map();
 
 let layerControl = null;
 
@@ -327,6 +327,10 @@ async function initialiseMapsAndLayers() {
   found.forEach((base) => {
     baseLayers[base.title] = base.imageOverlay;
 
+    // Create a dedicated drawn group for this base image.
+    const drawnGroup = new L.FeatureGroup();
+    drawnByBase.set(base.id, drawnGroup);
+
     for (const [suffix, def] of Object.entries(LAYER_DEFS)) {
       const group = base.overlays[suffix];
       if (group && group.getLayers().length > 0) {
@@ -334,10 +338,10 @@ async function initialiseMapsAndLayers() {
         overlayLayers[overlayName] = group;
       }
     }
-  });
 
-  // Drawn items overlay (active for all maps).
-  overlayLayers["Drawn features"] = drawnItems;
+    // Expose a toggleable overlay for drawn features of this base map.
+    overlayLayers[`${base.title} – Drawn`] = drawnGroup;
+  });
 
   layerControl = L.control.layers(baseLayers, overlayLayers, {
     collapsed: false,
@@ -362,7 +366,11 @@ async function initialiseMapsAndLayers() {
       }
     }
   }
-  map.addLayer(drawnItems);
+  // Also show this base map's drawn overlay by default.
+  const firstDrawn = drawnByBase.get(firstBase.id);
+  if (firstDrawn) {
+    map.addLayer(firstDrawn);
+  }
 
   // When switching base maps, update bounds.
   map.on("baselayerchange", (evt) => {
@@ -391,7 +399,9 @@ initialiseMapsAndLayers().catch((err) => {
 
 const drawControl = new L.Control.Draw({
   edit: {
-    featureGroup: drawnItems,
+    // We will keep this group in sync with the currently
+    // active base map's drawn group.
+    featureGroup: new L.FeatureGroup(),
   },
   draw: {
     marker: true,
@@ -428,7 +438,17 @@ map.on(L.Draw.Event.CREATED, (evt) => {
     category,
   };
 
-  drawnItems.addLayer(layer);
+  // Store the feature in the drawn group for the active base map.
+  const targetGroup = currentBaseId ? drawnByBase.get(currentBaseId) : null;
+  if (targetGroup) {
+    targetGroup.addLayer(layer);
+    // Ensure the group's overlay is visible when a new feature is added.
+    if (!map.hasLayer(targetGroup)) {
+      map.addLayer(targetGroup);
+    }
+  } else {
+    console.warn("Drawn feature ignored: no active base map.");
+  }
 });
 
 // -----------------------------
