@@ -1,0 +1,57 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "mapId": "mine_map",
+        "category": "survey"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            4680,
+            3376
+          ],
+          [
+            5600,
+            3440
+          ],
+          [
+            6304,
+            3496
+          ],
+          [
+            6872,
+            3408
+          ],
+          [
+            7496,
+            3232
+          ],
+          [
+            8088,
+            2920
+          ],
+          [
+            8704,
+            2768
+          ],
+          [
+            9248,
+            2440
+          ],
+          [
+            9768,
+            2176
+          ],
+          [
+            10024,
+            2048
+          ]
+        ]
+      }
+    }
+  ]
+}
