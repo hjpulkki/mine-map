@@ -290,6 +290,12 @@ async function loadStaticGeoJsonForBase(base) {
 
   const loadPromises = Object.entries(LAYER_DEFS).map(
     async ([suffix, def]) => {
+      // Special case: only try to load *-dynyboksi.geojson for base id "58"
+      // to avoid 404s like mine_map-dynyboksi.geojson.
+      if (suffix === "dynyboksi" && id !== "58") {
+        return;
+      }
+
       const group = L.layerGroup();
       base.overlays[suffix] = group;
 
